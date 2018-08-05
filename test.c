@@ -13,6 +13,7 @@ int instrument = 0, octave = 0;
 fluid_settings_t* settings;
 fluid_synth_t* synth;
 fluid_audio_driver_t* adriver = NULL;
+int CMajor[7] = {60, 62, 64, 65, 67, 69, 71};
 
 void showInst(fluid_sfont_t *sf, int preNum) {
 	fluid_preset_t* ps = sf->get_preset(sf, 0, preNum);
@@ -38,7 +39,7 @@ int fx_func(void *data, int len, int nin, float **in, int nout, float **out) {
 }
 
 void octaveControl() {
-	if (!digitalRead(25)) {
+	if (!digitalRead(7)) {
 		++octave;
 		if (octave > 1) octave = -1;
 		delay(100);
@@ -47,8 +48,8 @@ void octaveControl() {
 
 int playing[30] = {0};
 void noteControl() {
-	for (int i = 0; i <= 7; ++i) {
-		int note = i + 60 + octave * 12;
+	for (int i = 0; i <= 6; ++i) {
+		int note = CMajor[i] + octave * 12;
 		if (!digitalRead(i)) {
 			if (!playing[i]) {
 				fluid_synth_noteon(synth, 0, note, 127);
@@ -63,7 +64,7 @@ void noteControl() {
 		}
 	}
 	for (int i = 21; i <= 24; ++i) {
-		int note = i - 13 + 60 + octave * 12;
+		int note = CMajor[i - 21] + 12 + octave * 12;
 		if (!digitalRead(i)) {
 			if (!playing[i]) {
 				fluid_synth_noteon(synth, 0, note, 127);
@@ -118,8 +119,9 @@ int main(int argc, char** argv)
 	fx_data.synth = synth;
 
 	/* Create the audio driver. The synthesizer starts playing as soon
-		as the driver is created. */
+		as the driver is created. No fx. */
 	adriver = new_fluid_audio_driver(settings, synth);
+	/* Use fx. */
 	// adriver = new_fluid_audio_driver2(settings, fx_func, (void *) &fx_data);
 	
 	/* Load a SoundFont and reset presets (so that new instruments
