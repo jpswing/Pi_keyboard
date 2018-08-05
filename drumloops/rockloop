@@ -1,0 +1,25 @@
+use_bpm 120
+
+sample :drum_tom_hi_hard
+sleep 1
+sample :drum_tom_mid_hard
+sleep 1
+sample :drum_tom_lo_hard
+sleep 1
+sample :drum_splash_hard
+
+loop do
+  sample :drum_bass_hard
+  sleep 1
+  sample :drum_snare_hard
+  sleep 1
+  sample :drum_bass_hard
+  sleep 0.5
+  sample :drum_bass_hard
+  sleep 0.5
+  sample :drum_snare_hard
+  sleep 1
+end
+
+sample :drum_cymbal_open
+# sample :drum_tom_hi_hard
