@@ -12,14 +12,15 @@ struct fx_data_t {
 int instrument = 0, octave = 0;
 fluid_settings_t* settings = NULL;
 fluid_synth_t* synth = NULL;
+fluid_sfont_t* sfont = NULL;
 fluid_audio_driver_t* adriver = NULL;
 fluid_midi_driver_t* mdriver = NULL;
 int CMajor[7] = {60, 62, 64, 65, 67, 69, 71};
 
 int distortion = 0;
 
-void showInst(fluid_sfont_t *sf, int preNum) {
-	fluid_preset_t* ps = sf->get_preset(sf, 0, preNum);
+void showInst(int preNum) {
+	fluid_preset_t* ps = sfont->get_preset(sfont, 0, preNum);
 	printf("current instrument: No.%d: %s\n", preNum, 
 			ps->get_name(ps));
 }
@@ -33,10 +34,12 @@ int fx_func(void *data, int len, int nin, float **in, int nout, float **out) {
 		for (int i = 0; i < nout; ++i) {
 			float *out_i = out[i];
 			for (int k = 0; k < len; ++k) {
-				float x = out_i[k] * 2;
+				float x = out_i[k] * 20;
 				
 				if (x > 0) out_i[k] = 1 - exp(-x);
 				else out_i[k] = -1 + exp(x);
+
+				out_i[k] /= 3;
 
 				/*
 				if (abs(x) < 1e-8) continue;
@@ -92,9 +95,18 @@ void noteControl() {
 	}
 }
 
+int midiControl (void* data, fluid_midi_event_t* event) {
+	fluid_synth_handle_midi_event(data, event);
+	// printf("%d\n", fluid_midi_event_get_type(event));
+	if (fluid_midi_event_get_type(event) == 192) {
+		instrument = fluid_midi_event_get_control(event);
+		showInst(instrument);
+	}
+	return 0;
+}
+
 int main(int argc, char** argv)
 {
-	fluid_sfont_t* sfont = NULL;
 	struct fx_data_t fx_data;
 	int sfont_id;
 	int ret;
@@ -140,7 +152,7 @@ int main(int argc, char** argv)
 	
 	fx_data.synth = synth;
 
-	mdriver = new_fluid_midi_driver(settings, fluid_synth_handle_midi_event, synth);
+	mdriver = new_fluid_midi_driver(settings, midiControl, synth);
 	/* Create the audio driver. The synthesizer starts playing as soon
 	 * as the driver is created. */
 	adriver = new_fluid_audio_driver2(settings, fx_func, (void *) &fx_data);
@@ -153,7 +165,7 @@ int main(int argc, char** argv)
 		goto cleanUp;
 	}
 	sfont = fluid_synth_get_sfont_by_id(synth, sfont_id);
-	showInst(sfont, instrument);
+	showInst(instrument);
 	
 	printf("ready\n");
 
