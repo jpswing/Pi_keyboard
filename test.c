@@ -13,6 +13,7 @@ int instrument = 0, octave = 0;
 fluid_settings_t* settings = NULL;
 fluid_synth_t* synth = NULL;
 fluid_audio_driver_t* adriver = NULL;
+fluid_midi_driver_t* mdriver = NULL;
 int CMajor[7] = {60, 62, 64, 65, 67, 69, 71};
 
 int distortion = 0;
@@ -115,12 +116,22 @@ int main(int argc, char** argv)
 	/* Change the settings if necessary*/
 	ret = fluid_settings_setstr(settings, "audio.driver", "alsa");
 	if (ret == FLUID_FAILED) {
-		fprintf(stderr, "cannot change audio driver\n");
+		fprintf(stderr, "error on setting audio driver\n");
 		goto cleanUp;
 	}
 	ret = fluid_settings_setnum(settings, "synth.gain", 1.5);
 	if (ret == FLUID_FAILED) {
-		fprintf(stderr, "cannot set gain\n");
+		fprintf(stderr, "error on setting gain\n");
+		goto cleanUp;
+	}
+	ret = fluid_settings_setstr(settings, "midi.driver", "alsa_raw");
+	if (ret == FLUID_FAILED) {
+		fprintf(stderr, "error on setting midi driver\n");
+		goto cleanUp;
+	}
+	ret = fluid_settings_setstr(settings, "midi.alsa.device", "hw:1,0,0");
+	if (ret == FLUID_FAILED) {
+		fprintf(stderr, "error on setting midi device\n");
 		goto cleanUp;
 	}
 	
@@ -129,6 +140,7 @@ int main(int argc, char** argv)
 	
 	fx_data.synth = synth;
 
+	mdriver = new_fluid_midi_driver(settings, fluid_synth_handle_midi_event, synth);
 	/* Create the audio driver. The synthesizer starts playing as soon
 	 * as the driver is created. */
 	adriver = new_fluid_audio_driver2(settings, fx_func, (void *) &fx_data);
@@ -137,7 +149,7 @@ int main(int argc, char** argv)
 	 * get used from the SoundFont) */
 	sfont_id = fluid_synth_sfload(synth, "./samples/touhou.sf2", 1);
 	if (sfont_id == FLUID_FAILED) {
-		fprintf(stderr, "error on open soundfont\n");
+		fprintf(stderr, "error on opening soundfont\n");
 		goto cleanUp;
 	}
 	sfont = fluid_synth_get_sfont_by_id(synth, sfont_id);
