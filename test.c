@@ -15,7 +15,7 @@ fluid_synth_t* synth = NULL;
 fluid_sfont_t* sfont = NULL;
 fluid_audio_driver_t* adriver = NULL;
 fluid_midi_driver_t* mdriver = NULL;
-int CMajor[7] = {60, 62, 64, 65, 67, 69, 71};
+const int CMajor[7] = {60, 62, 64, 65, 67, 69, 71};
 
 int distortion = 0;
 
@@ -39,7 +39,7 @@ int fx_func(void *data, int len, int nin, float **in, int nout, float **out) {
 				if (x > 0) out_i[k] = 1 - exp(-x);
 				else out_i[k] = -1 + exp(x);
 
-				out_i[k] /= 3;
+				out_i[k] /= 4;
 
 				/*
 				if (abs(x) < 1e-8) continue;
@@ -67,7 +67,7 @@ void noteControl() {
 		int note = CMajor[i] + octave * 12;
 		if (!digitalRead(i)) {
 			if (!playing[i]) {
-				fluid_synth_noteon(synth, 0, note, 127);
+				fluid_synth_noteon(synth, 0, note, 80);
 				playing[i] = 1;
 			}
 		}
@@ -82,7 +82,7 @@ void noteControl() {
 		int note = CMajor[i - 21] + 12 + octave * 12;
 		if (!digitalRead(i)) {
 			if (!playing[i]) {
-				fluid_synth_noteon(synth, 0, note, 127);
+				fluid_synth_noteon(synth, 0, note, 80);
 				playing[i] = 1;
 			}
 		}
@@ -95,9 +95,60 @@ void noteControl() {
 	}
 }
 
+const int CHORD[5][12] = {
+	{4, 7},
+	{3, 7},
+};
+const char const *CHORD_NAME[5] = {
+	"Major",
+	"Minor",
+};
+int pitchs[130] = {0}, pcnt = 0;
+
+void detectChord() {
+	if (pcnt < 3) return;
+	int oct[12] = {0}; // notes in one octave
+	int flag[12] = {0}; // notes appearance flag
+	int cnt = 0;
+	for (int i = 0; i < 130; ++i) {
+		if (pitchs[i] && !flag[i % 12]) {
+			oct[cnt++] = i;
+			flag[i % 12] = 1;
+		}
+	}
+	for (int i = 1; i < cnt; ++i) {
+		while (oct[i] - 12 >= oct[0]) oct[i] -= 12;
+	}
+
+	int itv[12];
+	for (int i = 1; i < cnt; ++i) {
+		itv[i - 1] = oct[i] - oct[0];
+	}
+	for (int chd = 0; chd < 2; ++chd) {
+		int i;
+		for (i = 0; i < cnt - 1; ++i) {
+			if (itv[i] != CHORD[chd][i]) break;
+		}
+		if (i == cnt - 1) {
+			printf("%s\n", CHORD_NAME[chd]);
+			return;
+		}
+	}
+}
+
 int midiControl (void* data, fluid_midi_event_t* event) {
 	fluid_synth_handle_midi_event(data, event);
-	// printf("%d\n", fluid_midi_event_get_type(event));
+	int type = fluid_midi_event_get_type(event), pitch = fluid_midi_event_get_pitch(event);
+	if (type == 144 && pitchs[pitch] == 0) {
+		pitchs[pitch] = 1;
+		++pcnt;
+	}
+	else if (type == 128 && pitchs[pitch] == 1) {
+		pitchs[pitch] = 0;
+		--pcnt;
+	}
+	printf("%d %d %d\n", pcnt, type, pitch);
+	detectChord();
 	if (fluid_midi_event_get_type(event) == 192) {
 		instrument = fluid_midi_event_get_control(event);
 		showInst(instrument);
@@ -131,7 +182,7 @@ int main(int argc, char** argv)
 		fprintf(stderr, "error on setting audio driver\n");
 		goto cleanUp;
 	}
-	ret = fluid_settings_setnum(settings, "synth.gain", 1.5);
+	ret = fluid_settings_setnum(settings, "synth.gain", 2.0);
 	if (ret == FLUID_FAILED) {
 		fprintf(stderr, "error on setting gain\n");
 		goto cleanUp;
@@ -153,21 +204,19 @@ int main(int argc, char** argv)
 	fx_data.synth = synth;
 
 	mdriver = new_fluid_midi_driver(settings, midiControl, synth);
-	/* Create the audio driver. The synthesizer starts playing as soon
-	 * as the driver is created. */
+	/* Create the audio driver. */
 	adriver = new_fluid_audio_driver2(settings, fx_func, (void *) &fx_data);
 	
-	/* Load a SoundFont and reset presets (so that new instruments
-	 * get used from the SoundFont) */
+	/* Load a SoundFont and reset presets */
 	sfont_id = fluid_synth_sfload(synth, "./samples/touhou.sf2", 1);
 	if (sfont_id == FLUID_FAILED) {
 		fprintf(stderr, "error on opening soundfont\n");
 		goto cleanUp;
 	}
 	sfont = fluid_synth_get_sfont_by_id(synth, sfont_id);
-	showInst(instrument);
 	
 	printf("ready\n");
+	showInst(instrument);
 
 	for (;;) {
 		noteControl();
@@ -176,17 +225,6 @@ int main(int argc, char** argv)
 		if (!digitalRead(25)) distortion = 1;
 		else distortion = 0;
 		
-		/*
-		if (!digitalRead(1)) {
-			ret = fluid_synth_program_change(synth, 0, ++instrument);
-			if (ret == FLUID_FAILED) {
-				fprintf(stderr, "cannot change instrument\n");
-				goto cleanUp;
-			}
-			showInst(sfont, instrument);
-			delay(200);
-		}
-		*/
 		delay(100);
 	}
 	
