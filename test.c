@@ -15,6 +15,7 @@ fluid_synth_t* synth = NULL;
 fluid_sfont_t* sfont = NULL;
 fluid_audio_driver_t* adriver = NULL;
 fluid_midi_driver_t* mdriver = NULL;
+fluid_player_t* dplayer = NULL;
 const int CMajor[7] = {60, 62, 64, 65, 67, 69, 71};
 
 int distortion = 0;
@@ -95,11 +96,12 @@ void noteControl() {
 	}
 }
 
-const int CHORD[5][12] = {
+#define CHORD_NUM 2
+const int CHORD[CHORD_NUM][12] = {
 	{4, 7},
 	{3, 7},
 };
-const char const *CHORD_NAME[5] = {
+const char const *CHORD_NAME[CHORD_NUM] = {
 	"Major",
 	"Minor",
 };
@@ -124,7 +126,7 @@ void detectChord() {
 	for (int i = 1; i < cnt; ++i) {
 		itv[i - 1] = oct[i] - oct[0];
 	}
-	for (int chd = 0; chd < 2; ++chd) {
+	for (int chd = 0; chd < CHORD_NUM; ++chd) {
 		int i;
 		for (i = 0; i < cnt - 1; ++i) {
 			if (itv[i] != CHORD[chd][i]) break;
@@ -142,18 +144,33 @@ int midiControl (void* data, fluid_midi_event_t* event) {
 	if (type == 144 && pitchs[pitch] == 0) {
 		pitchs[pitch] = 1;
 		++pcnt;
+		detectChord();
 	}
 	else if (type == 128 && pitchs[pitch] == 1) {
 		pitchs[pitch] = 0;
 		--pcnt;
 	}
-	printf("%d %d %d\n", pcnt, type, pitch);
-	detectChord();
-	if (fluid_midi_event_get_type(event) == 192) {
+	else if (type == 192) {
 		instrument = fluid_midi_event_get_control(event);
 		showInst(instrument);
 	}
+	// printf("%d %d %d\n", pcnt, type, pitch);
 	return 0;
+}
+
+int looping = 0;
+void drumControl() {
+	if (!digitalRead(7)) {
+		if (looping) {
+			fluid_player_stop(dplayer);
+			looping = 0;
+		}
+		else {
+			fluid_player_play(dplayer);
+			looping = 1;
+		}
+		delay(100);
+	}
 }
 
 int main(int argc, char** argv)
@@ -214,13 +231,17 @@ int main(int argc, char** argv)
 		goto cleanUp;
 	}
 	sfont = fluid_synth_get_sfont_by_id(synth, sfont_id);
+
+	dplayer = new_fluid_player(synth);
+	fluid_player_add(dplayer, "./drumloops/Swing.mid");
+	fluid_player_set_loop(dplayer, -1);
 	
 	printf("ready\n");
 	showInst(instrument);
 
 	for (;;) {
 		noteControl();
-		octaveControl();
+		drumControl();
 
 		if (!digitalRead(25)) distortion = 1;
 		else distortion = 0;
