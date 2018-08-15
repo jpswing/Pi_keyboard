@@ -101,6 +101,7 @@ const int CHORD[CHORD_NUM][12] = {
 	{4, 7},
 	{3, 7},
 };
+const int NCNT[CHORD_NUM] = {2, 2};
 const char const *CHORD_NAME[CHORD_NUM] = {
 	"Major",
 	"Minor",
@@ -122,16 +123,16 @@ void detectChord() {
 		while (oct[i] - 12 >= oct[0]) oct[i] -= 12;
 	}
 
-	int itv[12];
+	int itv[12] = {0}; // intervals
 	for (int i = 1; i < cnt; ++i) {
 		itv[i - 1] = oct[i] - oct[0];
 	}
 	for (int chd = 0; chd < CHORD_NUM; ++chd) {
 		int i;
-		for (i = 0; i < cnt - 1; ++i) {
+		for (i = 0; i < NCNT[chd]; ++i) {
 			if (itv[i] != CHORD[chd][i]) break;
 		}
-		if (i == cnt - 1) {
+		if (i == NCNT[chd]) {
 			printf("%s\n", CHORD_NAME[chd]);
 			return;
 		}
