@@ -86,9 +86,10 @@ void noteControl() {
 	}
 }
 
-#define CHORD_NUM 3
-const int CHORD[CHORD_NUM] = { 144, 136, 72 };
+#define CHORD_NUM 4
+const int CHORD[CHORD_NUM] = { 1168, 144, 136, 72 };
 const char const *CHORD_NAME[CHORD_NUM] = {
+	"dominant seventh",
 	"major",
 	"minor",
 	"diminished",
@@ -155,11 +156,15 @@ int looping = 0;
 void drumControl() {
 	if (!digitalRead(7)) {
 		if (looping) {
+			printf("before: %d\n", fluid_player_get_status(dplayer));
 			fluid_player_stop(dplayer);
+			printf("after: %d\n", fluid_player_get_status(dplayer));
 			looping = 0;
 		}
 		else {
+			printf("before: %d\n", fluid_player_get_status(dplayer));
 			fluid_player_play(dplayer);
+			printf("after: %d\n", fluid_player_get_status(dplayer));
 			looping = 1;
 		}
 		delay(100);
