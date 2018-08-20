@@ -4,6 +4,7 @@
 #include <math.h>
 
 #define abs(x) ((x) < 0 ? -(x) : (x))
+#define set1bit(x, i) ((x) |= (1<<(i)))
 
 struct fx_data_t {
 	fluid_synth_t *synth;
@@ -17,8 +18,11 @@ fluid_audio_driver_t* adriver = NULL;
 fluid_midi_driver_t* mdriver = NULL;
 fluid_player_t* dplayer = NULL;
 const int CMajor[7] = {60, 62, 64, 65, 67, 69, 71};
-
-int distortion = 0;
+const char const *NOTE_NAME[12] = {
+	"C", "C#/Db", "D", "D#/Eb", 
+	"E", "F", "F#/Gb", "G", "G#/Ab",
+	"A", "A#/Bb", "B"
+};
 
 void showInst(int preNum) {
 	fluid_preset_t* ps = sfont->get_preset(sfont, 0, preNum);
@@ -26,6 +30,7 @@ void showInst(int preNum) {
 			ps->get_name(ps));
 }
 
+int distortion = 0;
 int fx_func(void *data, int len, int nin, float **in, int nout, float **out) {
 	struct fx_data_t *fx_data = (struct fx_data_t*) data;
 	if (fluid_synth_process(fx_data->synth, len, nin, in, nout, out) != 0) {
@@ -79,32 +84,18 @@ void noteControl() {
 			}
 		}
 	}
-	for (int i = 21; i <= 24; ++i) {
-		int note = CMajor[i - 21] + 12 + octave * 12;
-		if (!digitalRead(i)) {
-			if (!playing[i]) {
-				fluid_synth_noteon(synth, 0, note, 80);
-				playing[i] = 1;
-			}
-		}
-		else {
-			if (playing[i]) {
-				fluid_synth_noteoff(synth, 0, note);
-				playing[i] = 0;
-			}
-		}
-	}
 }
 
-#define CHORD_NUM 2
-const int CHORD[CHORD_NUM][12] = {
-	{4, 7},
-	{3, 7},
-};
-const int NCNT[CHORD_NUM] = {2, 2};
+#define CHORD_NUM 3
+const int CHORD[CHORD_NUM] = { 144, 136, 72 };
 const char const *CHORD_NAME[CHORD_NUM] = {
-	"Major",
-	"Minor",
+	"major",
+	"minor",
+	"diminished",
+};
+const int SCALE[CHORD_NUM][7] = {
+	{2, 4, 5, 7, 9, 11},
+	{2, 3, 5, 7, 8, 10},
 };
 int pitchs[130] = {0}, pcnt = 0;
 
@@ -119,21 +110,22 @@ void detectChord() {
 			flag[i % 12] = 1;
 		}
 	}
-	for (int i = 1; i < cnt; ++i) {
+	for (int i = 1; i < cnt; ++i) { // shift notes to one octave
 		while (oct[i] - 12 >= oct[0]) oct[i] -= 12;
 	}
 
-	int itv[12] = {0}; // intervals
+	int itv = 0; // intervals
 	for (int i = 1; i < cnt; ++i) {
-		itv[i - 1] = oct[i] - oct[0];
+		set1bit(itv, oct[i] - oct[0]);
 	}
-	for (int chd = 0; chd < CHORD_NUM; ++chd) {
-		int i;
-		for (i = 0; i < NCNT[chd]; ++i) {
-			if (itv[i] != CHORD[chd][i]) break;
+	for (int c = 0; c < CHORD_NUM; ++c) {
+		int chord = CHORD[c];
+		if (itv == chord) {
+			printf("%s %s\n", NOTE_NAME[oct[0] % 12], CHORD_NAME[c]);
+			return;
 		}
-		if (i == NCNT[chd]) {
-			printf("%s\n", CHORD_NAME[chd]);
+		else if ((itv & chord) == chord) {
+			printf("partial %s %s\n", NOTE_NAME[oct[0] % 12], CHORD_NAME[c]);
 			return;
 		}
 	}
