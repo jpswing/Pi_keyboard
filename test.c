@@ -10,10 +10,14 @@ struct fx_data_t {
 	fluid_synth_t *synth;
 	float val;
 };
-int instrument = 0, octave = 0;
+
+int instrument = 0;
 fluid_settings_t* settings = NULL;
 fluid_synth_t* synth = NULL;
 fluid_sfont_t* sfont = NULL;
+fluid_sequencer_t* seq;
+short synth_destination, client_destination;
+
 fluid_audio_driver_t* adriver = NULL;
 fluid_midi_driver_t* mdriver = NULL;
 fluid_player_t* dplayer = NULL;
@@ -59,31 +63,21 @@ int fx_func(void *data, int len, int nin, float **in, int nout, float **out) {
 	return 0;
 }
 
-void octaveControl() {
-	if (!digitalRead(7)) {
-		++octave;
-		if (octave > 1) octave = -1;
-		delay(100);
-	}
-}
-
-int playing[30] = {0};
-void noteControl() {
-	for (int i = 0; i <= 6; ++i) {
-		int note = CMajor[i] + octave * 12;
-		if (!digitalRead(i)) {
-			if (!playing[i]) {
-				fluid_synth_noteon(synth, 0, note, 80);
-				playing[i] = 1;
-			}
-		}
-		else {
-			if (playing[i]) {
-				fluid_synth_noteoff(synth, 0, note);
-				playing[i] = 0;
-			}
-		}
-	}
+struct cell {
+	int on;
+	int chan;
+	int key;
+	int vel;
+	unsigned int time;
+} sequence[200];
+int recording = 0, total = 0;
+void recordingControl(fluid_midi_event_t *evt) {
+	sequence[total].on = (fluid_midi_event_get_type(evt) == 144 ? 1 : 0);
+	sequence[total].chan = fluid_midi_event_get_channel(evt);
+	sequence[total].key = fluid_midi_event_get_key(evt);
+	sequence[total].vel = fluid_midi_event_get_velocity(evt);
+	sequence[total].time = fluid_sequencer_get_tick(seq);
+	++total;
 }
 
 #define CHORD_NUM 4
@@ -139,16 +133,19 @@ int midiControl (void* data, fluid_midi_event_t* event) {
 		pitchs[pitch] = 1;
 		++pcnt;
 		detectChord();
+		if (recording) recordingControl(event);
 	}
 	else if (type == 128 && pitchs[pitch] == 1) {
 		pitchs[pitch] = 0;
 		--pcnt;
+		if (recording) recordingControl(event);
 	}
 	else if (type == 192) {
 		instrument = fluid_midi_event_get_control(event);
 		showInst(instrument);
 	}
 	// printf("%d %d %d\n", pcnt, type, pitch);
+	// printf("%u\n", fluid_sequencer_get_tick(seq));
 	return 0;
 }
 
@@ -156,18 +153,33 @@ int looping = 0;
 void drumControl() {
 	if (!digitalRead(7)) {
 		if (looping) {
-			printf("before: %d\n", fluid_player_get_status(dplayer));
+			// printf("before: %d\n", fluid_player_get_status(dplayer));
 			fluid_player_stop(dplayer);
-			printf("after: %d\n", fluid_player_get_status(dplayer));
+			// printf("after: %d\n", fluid_player_get_status(dplayer));
 			looping = 0;
 		}
 		else {
-			printf("before: %d\n", fluid_player_get_status(dplayer));
+			// printf("before: %d\n", fluid_player_get_status(dplayer));
 			fluid_player_play(dplayer);
-			printf("after: %d\n", fluid_player_get_status(dplayer));
+			// printf("after: %d\n", fluid_player_get_status(dplayer));
 			looping = 1;
 		}
 		delay(100);
+	}
+}
+
+void schedule_note(int chan, short key, short vel, unsigned int time, int on) {
+	fluid_event_t *ev = new_fluid_event();
+	fluid_event_set_source(ev, -1);
+	fluid_event_set_dest(ev, synth_destination);
+	if (on) fluid_event_noteon(ev, chan, key, vel);
+	else fluid_event_noteoff(ev, chan, key);
+	fluid_sequencer_send_at(seq, ev, time, 0);
+	delete_fluid_event(ev);
+}
+void seq_callback(unsigned int time, fluid_event_t *evt, fluid_sequencer_t *seq, void *data) {
+	for (int i = 0; i < total; ++i) {
+		schedule_note(sequence[i].chan, sequence[i].key, sequence[i].vel, sequence[i].time, sequence[i].on);
 	}
 }
 
@@ -222,6 +234,10 @@ int main(int argc, char** argv)
 	/* Create the audio driver. */
 	adriver = new_fluid_audio_driver2(settings, fx_func, (void *) &fx_data);
 	
+	seq = new_fluid_sequencer();
+	synth_destination = fluid_sequencer_register_fluidsynth(seq, synth);
+	client_destination = fluid_sequencer_register_client(seq, "test", seq_callback, NULL);
+	
 	/* Load a SoundFont and reset presets */
 	sfont_id = fluid_synth_sfload(synth, "./samples/touhou.sf2", 1);
 	if (sfont_id == FLUID_FAILED) {
@@ -231,18 +247,44 @@ int main(int argc, char** argv)
 	sfont = fluid_synth_get_sfont_by_id(synth, sfont_id);
 
 	dplayer = new_fluid_player(synth);
-	fluid_player_add(dplayer, "./drumloops/Swing.mid");
+	fluid_player_add(dplayer, "./drumloops/Downtempo.mid");
 	fluid_player_set_loop(dplayer, -1);
 	
-	printf("ready\n");
 	showInst(instrument);
 
 	for (;;) {
-		noteControl();
 		drumControl();
 
 		if (!digitalRead(25)) distortion = 1;
 		else distortion = 0;
+		if (!digitalRead(0)) { // recording
+			if (recording == 0) {
+				total = 0;
+				recording = 1;
+				printf("recording on\n");
+			}
+		}
+		else {
+			if (recording == 1) {
+				for (int i = 1; i < total; ++i) {
+					sequence[i].time -= sequence[0].time;
+				}
+				sequence[0].time = 0;
+				recording = 0;
+				printf("recording off\n");
+			}
+		}
+
+		if (!digitalRead(3)) { // recording playback
+			fluid_event_t *ev = new_fluid_event();
+			fluid_event_set_source(ev, -1);
+			fluid_event_set_dest(ev, client_destination);
+			fluid_event_timer(ev, NULL);
+			fluid_sequencer_send_now(seq, ev);
+			delete_fluid_event(ev);
+			delay(100);
+			// printf("p?\n");
+		}
 		
 		delay(100);
 	}
